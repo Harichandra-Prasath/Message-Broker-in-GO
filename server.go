@@ -1,28 +1,37 @@
 package main
 
 import (
-	"log"
 	"net/http"
+
+	"github.com/gorilla/mux"
 )
 
 type Config struct {
 	ListenAddr string
+	StoreFunc  ProduceFunc
 }
 
 type Server struct {
 	*Config
+	Sections map[string]Storer
 }
 
 func Newserver(cfg *Config) *Server {
 	return &Server{
-		cfg,
+		Config:   cfg,
+		Sections: make(map[string]Storer),
 	}
 }
 
 func (s *Server) Serve() error {
-	http.HandleFunc("/test", func(w http.ResponseWriter, r *http.Request) {
-		log.Print(r.URL.Path)
-	})
-	err := http.ListenAndServe(s.Config.ListenAddr, nil)
+	r := mux.NewRouter()
+	err := http.ListenAndServe(s.Config.ListenAddr, r)
 	return err
+}
+
+func (s *Server) NewSection(section string) {
+	if _, ok := s.Sections[section]; !ok {
+		s.Sections[section] = s.Config.StoreFunc()
+	}
+
 }
