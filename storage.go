@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"sync"
 )
 
@@ -31,6 +32,7 @@ func (st *Store) Append(data []byte) int {
 	defer st.mu.Unlock()
 
 	st.data = append(st.data, data)
+	slog.Info("Data appended", "data", string(data))
 	return len(st.data) - 1
 }
 
