@@ -46,7 +46,12 @@ func StartConsumer(s *Server, r *mux.Router) error {
 
 			}
 			slog.Info("Websocket connection Made")
-			fmt.Print(conn)
+			conn.WriteMessage(websocket.BinaryMessage, []byte("You are connected"))
+			s.Peerch <- Peer{
+				Section: section,
+				Conn:    conn,
+			}
+
 		}
 
 	}).Methods("GET")
@@ -59,5 +64,22 @@ func (s *Server) NewSection(section string) {
 	if _, ok := s.Sections[section]; !ok {
 		s.Sections[section] = s.Config.StoreFunc()
 		slog.Info("New Section in memory created")
+	}
+}
+
+func (s *Server) NewPeer(p *Peer) error {
+	// check for the section
+	if _, ok := s.Sections[p.Section]; !ok {
+		return fmt.Errorf("%s Section not found", p.Section)
+	}
+	// add the current connection to the submap
+	s.Submap[p.Section] = append(s.Submap[p.Section], p.Conn)
+	slog.Info("Peer added to the section")
+	return nil
+}
+
+func (s *Server) publish(data *Post) {
+	for _, conn := range s.Submap[data.section] {
+		conn.WriteMessage(websocket.BinaryMessage, data.Data)
 	}
 }
