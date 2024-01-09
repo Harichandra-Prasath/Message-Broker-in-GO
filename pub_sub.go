@@ -15,6 +15,11 @@ var (
 	upgrader = websocket.Upgrader{}
 )
 
+type Message struct {
+	Reason   string   `json:"Reason"`
+	Sections []string `json:"Sections"`
+}
+
 func StartProducer(s *Server, r *mux.Router) error {
 	r.HandleFunc("/pub/{section}", func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
@@ -32,32 +37,78 @@ func StartProducer(s *Server, r *mux.Router) error {
 }
 
 func StartConsumer(s *Server, r *mux.Router) error {
-	r.HandleFunc("/sub/{section}", func(w http.ResponseWriter, r *http.Request) {
-		vars := mux.Vars(r)
-		section := vars["section"]
-		if _, ok := s.Sections[section]; !ok {
-			w.Write([]byte("Section not found...."))
+	r.HandleFunc("/sub/", func(w http.ResponseWriter, r *http.Request) {
+
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			w.Write([]byte("Internal Error"))
+			log.Panic(err)
 			return
-		} else {
-			conn, err := upgrader.Upgrade(w, r, nil)
-			if err != nil {
-				w.Write([]byte("Internal Error"))
-				log.Fatal(err)
-
-			}
-			slog.Info("Websocket connection Made")
-			conn.WriteMessage(websocket.BinaryMessage, []byte("You are connected"))
-			s.Peerch <- Peer{
-				Section: section,
-				Conn:    conn,
-			}
-
 		}
 
+		slog.Info("Websocket connection Made")
+		conn.WriteMessage(websocket.BinaryMessage, []byte("You are connected"))
+		s.Peerch <- Peer{
+			Conn:          conn,
+			SectionOffset: make(map[string]int),
+		}
 	}).Methods("GET")
 
 	err := http.ListenAndServe(s.Config.ConsumerListenAddr, r)
 	return err
+}
+
+func peerlisten(p *Peer, s *Server) {
+	var message Message
+	for {
+		err := p.Conn.ReadJSON(&message)
+		if err != nil {
+			fmt.Println(message.Sections)
+			slog.Error(err.Error())
+		} else {
+			Process(message, p, s)
+		}
+
+	}
+}
+
+func Process(m Message, p *Peer, s *Server) {
+	if m.Reason == "Subscribe" {
+		s.AddPeertoSection(p, m)
+	}
+	if m.Reason == "Pull" {
+		s.PushtoPeer(p, m)
+	}
+}
+
+func (s *Server) PushtoPeer(p *Peer, m Message) {
+	if len(m.Sections) == 0 {
+		slog.Info("No sections provided")
+		p.Conn.WriteMessage(websocket.BinaryMessage, []byte("Give a section"))
+		return
+	}
+	for _, section := range m.Sections {
+		if _, ok := p.SectionOffset[section]; !ok {
+			p.Conn.WriteMessage(websocket.BinaryMessage, []byte("You are not subscribed to this section"))
+			continue
+		}
+		offset := p.SectionOffset[section]
+		size := len(s.Sections[section].(*Store).data)
+		fmt.Println(size)
+		for i := offset; i < size; i++ {
+			data, err := s.Sections[section].Fetch(i)
+			if err != nil {
+				slog.Info(err.Error())
+				p.Conn.WriteMessage(websocket.BinaryMessage, []byte(err.Error()))
+				continue
+			}
+			p.Conn.WriteMessage(websocket.BinaryMessage, []byte(data))
+			p.SectionOffset[section] += 1
+
+		}
+
+	}
+
 }
 
 func (s *Server) NewSection(section string) {
@@ -67,19 +118,15 @@ func (s *Server) NewSection(section string) {
 	}
 }
 
-func (s *Server) NewPeer(p *Peer) error {
+func (s *Server) AddPeertoSection(p *Peer, m Message) {
 	// check for the section
-	if _, ok := s.Sections[p.Section]; !ok {
-		return fmt.Errorf("%s Section not found", p.Section)
-	}
-	// add the current connection to the submap
-	s.Submap[p.Section] = append(s.Submap[p.Section], p.Conn)
-	slog.Info("Peer added to the section")
-	return nil
-}
+	for _, section := range m.Sections {
+		if _, ok := s.Sections[section]; !ok {
+			slog.Info("Section not found", "section", section)
+		} else {
+			p.SectionOffset[section] = 0
+			slog.Info("Peer added to the section", "section", section)
+		}
 
-func (s *Server) publish(data *Post) {
-	for _, conn := range s.Submap[data.section] {
-		conn.WriteMessage(websocket.BinaryMessage, data.Data)
 	}
 }

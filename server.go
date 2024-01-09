@@ -1,8 +1,6 @@
 package main
 
 import (
-	"log/slog"
-
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 )
@@ -13,8 +11,8 @@ type Post struct {
 }
 
 type Peer struct {
-	Section string
-	Conn    *websocket.Conn
+	Conn          *websocket.Conn
+	SectionOffset map[string]int //section to offset
 }
 
 type Config struct {
@@ -26,7 +24,6 @@ type Config struct {
 type Server struct {
 	*Config
 	Sections map[string]Storer
-	Submap   map[string][]*websocket.Conn
 	Postch   chan Post
 	Peerch   chan Peer
 }
@@ -37,7 +34,6 @@ func Newserver(cfg *Config) *Server {
 		Sections: make(map[string]Storer),
 		Postch:   make(chan Post),
 		Peerch:   make(chan Peer),
-		Submap:   make(map[string][]*websocket.Conn),
 	}
 }
 
@@ -46,13 +42,9 @@ func (s *Server) listen() {
 		select {
 		case data := <-s.Postch:
 			s.NewSection(data.section)
-			s.StoreFunc().Append(data.Data)
-			s.publish(&data)
+			s.Sections[data.section].Push(data.Data)
 		case peer := <-s.Peerch:
-			err := s.NewPeer(&peer)
-			if err != nil {
-				slog.Info("Error", err)
-			}
+			go peerlisten(&peer, s)
 		}
 
 	}

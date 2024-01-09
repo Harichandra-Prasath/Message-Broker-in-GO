@@ -7,8 +7,8 @@ import (
 )
 
 type Storer interface {
-	Append([]byte) int
-	Pop(int) ([]byte, error)
+	Push([]byte) int
+	Fetch(int) ([]byte, error)
 }
 
 type ProduceFunc func() Storer
@@ -27,7 +27,7 @@ func NewStore() *Store {
 	}
 }
 
-func (st *Store) Append(data []byte) int {
+func (st *Store) Push(data []byte) int {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
@@ -36,12 +36,12 @@ func (st *Store) Append(data []byte) int {
 	return len(st.data) - 1
 }
 
-func (st *Store) Pop(pos int) ([]byte, error) {
+func (st *Store) Fetch(pos int) ([]byte, error) {
 	//check for position errors
-	if pos <= 0 {
+	if pos < 0 {
 		return nil, fmt.Errorf("invalid Position to pop")
 	} else if pos > len(st.data) {
 		return nil, fmt.Errorf("%d Position too high...Should be less than %d", pos, len(st.data)+1)
 	}
-	return st.data[pos-1], nil
+	return st.data[pos], nil
 }
