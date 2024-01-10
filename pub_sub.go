@@ -12,16 +12,22 @@ import (
 )
 
 var (
-	upgrader = websocket.Upgrader{}
+	upgrader = websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 )
 
 type Message struct {
+	Status  string
+	Section string `json:"Topic"`
+	Data    []byte `json:"Data"`
+}
+
+type Request struct {
 	Reason   string   `json:"Reason"`
 	Sections []string `json:"Sections"`
 }
 
-func StartProducer(s *Server, r *mux.Router) error {
-	r.HandleFunc("/pub/{section}", func(w http.ResponseWriter, r *http.Request) {
+func StartProducer(s *Server, ro *mux.Router) error {
+	ro.HandleFunc("/pub/{section}", func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
 		bytes, err := io.ReadAll(r.Body)
 		if err != nil {
@@ -32,77 +38,95 @@ func StartProducer(s *Server, r *mux.Router) error {
 			Data:    bytes,
 		}
 	}).Methods("POST")
-	err := http.ListenAndServe(s.Config.ProduceListenAddr, r)
+	err := http.ListenAndServe(s.Config.ProduceListenAddr, ro)
 	return err
 }
 
-func StartConsumer(s *Server, r *mux.Router) error {
-	r.HandleFunc("/sub/", func(w http.ResponseWriter, r *http.Request) {
-
+func StartConsumer(s *Server, ro *mux.Router) error {
+	ro.HandleFunc("/sub/", func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
+
 		if err != nil {
-			w.Write([]byte("Internal Error"))
+			w.Write([]byte("Error in upgrading socket"))
 			log.Panic(err)
 			return
 		}
-
 		slog.Info("Websocket connection Made")
-		conn.WriteMessage(websocket.BinaryMessage, []byte("You are connected"))
+		conn.WriteJSON(Message{
+			Status:  "Success",
+			Section: "",
+			Data:    []byte("You are Connected"),
+		})
 		s.Peerch <- Peer{
 			Conn:          conn,
 			SectionOffset: make(map[string]int),
 		}
+
 	}).Methods("GET")
 
-	err := http.ListenAndServe(s.Config.ConsumerListenAddr, r)
+	err := http.ListenAndServe(s.Config.ConsumerListenAddr, ro)
 	return err
 }
 
 func peerlisten(p *Peer, s *Server) {
-	var message Message
+	var request Request
 	for {
-		err := p.Conn.ReadJSON(&message)
+		err := p.Conn.ReadJSON(&request)
 		if err != nil {
-			fmt.Println(message.Sections)
+			fmt.Println(request.Sections)
 			slog.Error(err.Error())
 		} else {
-			Process(message, p, s)
+			go Process(request, p, s)
 		}
 
 	}
 }
 
-func Process(m Message, p *Peer, s *Server) {
-	if m.Reason == "Subscribe" {
-		s.AddPeertoSection(p, m)
+func Process(r Request, p *Peer, s *Server) {
+	if r.Reason == "Subscribe" {
+		go s.AddPeertoSection(p, r)
 	}
-	if m.Reason == "Pull" {
-		s.PushtoPeer(p, m)
+	if r.Reason == "Pull" {
+		go s.PushtoPeer(p, r)
 	}
 }
 
-func (s *Server) PushtoPeer(p *Peer, m Message) {
-	if len(m.Sections) == 0 {
+func (s *Server) PushtoPeer(p *Peer, r Request) {
+	if len(r.Sections) == 0 {
 		slog.Info("No sections provided")
-		p.Conn.WriteMessage(websocket.BinaryMessage, []byte("Give a section"))
+		p.Conn.WriteJSON(Message{
+			Status:  "Error",
+			Section: "",
+			Data:    []byte("NO section to Pull"),
+		})
 		return
 	}
-	for _, section := range m.Sections {
+	for _, section := range r.Sections {
 		if _, ok := p.SectionOffset[section]; !ok {
-			p.Conn.WriteMessage(websocket.BinaryMessage, []byte("You are not subscribed to this section"))
+			p.Conn.WriteJSON(Message{
+				Status:  "Error",
+				Section: section,
+				Data:    []byte("Not subscribed to the section"),
+			})
 			continue
 		}
 		offset := p.SectionOffset[section]
 		size := len(s.Sections[section].(*Store).data)
-		fmt.Println(size)
 		for i := offset; i < size; i++ {
 			data, err := s.Sections[section].Fetch(i)
 			if err != nil {
 				slog.Info(err.Error())
-				p.Conn.WriteMessage(websocket.BinaryMessage, []byte(err.Error()))
+				p.Conn.WriteJSON(Message{
+					Status:  "Error",
+					Section: section,
+					Data:    []byte(err.Error()),
+				})
 				continue
 			}
-			p.Conn.WriteMessage(websocket.BinaryMessage, []byte(data))
+			p.Conn.WriteJSON(Message{
+				Section: section,
+				Data:    data,
+			})
 			p.SectionOffset[section] += 1
 
 		}
@@ -118,9 +142,9 @@ func (s *Server) NewSection(section string) {
 	}
 }
 
-func (s *Server) AddPeertoSection(p *Peer, m Message) {
+func (s *Server) AddPeertoSection(p *Peer, r Request) {
 	// check for the section
-	for _, section := range m.Sections {
+	for _, section := range r.Sections {
 		if _, ok := s.Sections[section]; !ok {
 			slog.Info("Section not found", "section", section)
 		} else {
