@@ -16,8 +16,8 @@ var (
 )
 
 type Message struct {
-	Status  string
-	Section string `json:"Topic"`
+	Status  string `json:"Status"`
+	Section string `json:"Section"`
 	Data    []byte `json:"Data"`
 }
 
@@ -97,7 +97,7 @@ func (s *Server) PushtoPeer(p *Peer, r Request) {
 		p.Conn.WriteJSON(Message{
 			Status:  "Error",
 			Section: "",
-			Data:    []byte("NO section to Pull"),
+			Data:    []byte("NO section Provided to Pull"),
 		})
 		return
 	}
@@ -124,6 +124,7 @@ func (s *Server) PushtoPeer(p *Peer, r Request) {
 				continue
 			}
 			p.Conn.WriteJSON(Message{
+				Status:  "Success",
 				Section: section,
 				Data:    data,
 			})
@@ -143,13 +144,32 @@ func (s *Server) NewSection(section string) {
 }
 
 func (s *Server) AddPeertoSection(p *Peer, r Request) {
+	if len(r.Sections) == 0 {
+		slog.Info("No sections provided")
+		p.Conn.WriteJSON(Message{
+			Status:  "Error",
+			Section: "",
+			Data:    []byte("NO section Provided to Subscribe"),
+		})
+		return
+	}
 	// check for the section
 	for _, section := range r.Sections {
 		if _, ok := s.Sections[section]; !ok {
 			slog.Info("Section not found", "section", section)
+			p.Conn.WriteJSON(Message{
+				Status:  "Error",
+				Section: section,
+				Data:    []byte("Section not found or not yet published"),
+			})
 		} else {
 			p.SectionOffset[section] = 0
 			slog.Info("Peer added to the section", "section", section)
+			p.Conn.WriteJSON(Message{
+				Status:  "Success",
+				Section: section,
+				Data:    []byte("You are subscibed to the section"),
+			})
 		}
 
 	}

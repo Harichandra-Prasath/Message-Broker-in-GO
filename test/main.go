@@ -12,7 +12,8 @@ type Request struct {
 }
 
 type Message struct {
-	Section string `json:"Topic"`
+	Status  string `json:"Status"`
+	Section string `json:"Section"`
 	Data    []byte `json:"Data"`
 }
 
