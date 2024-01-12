@@ -1,10 +1,10 @@
 package main
 
 import (
-	"fmt"
 	"io"
 	"log"
 	"log/slog"
+	"net"
 	"net/http"
 
 	"github.com/gorilla/mux"
@@ -14,17 +14,6 @@ import (
 var (
 	upgrader = websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 )
-
-type Message struct {
-	Status  string `json:"Status"`
-	Section string `json:"Section"`
-	Data    []byte `json:"Data"`
-}
-
-type Request struct {
-	Reason   string   `json:"Reason"`
-	Sections []string `json:"Sections"`
-}
 
 func StartProducer(s *Server, ro *mux.Router) error {
 	ro.HandleFunc("/pub/{section}", func(w http.ResponseWriter, r *http.Request) {
@@ -45,7 +34,6 @@ func StartProducer(s *Server, ro *mux.Router) error {
 func StartConsumer(s *Server, ro *mux.Router) error {
 	ro.HandleFunc("/sub/", func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
-
 		if err != nil {
 			w.Write([]byte("Error in upgrading socket"))
 			log.Panic(err)
@@ -58,7 +46,9 @@ func StartConsumer(s *Server, ro *mux.Router) error {
 			Data:    []byte("You are Connected"),
 		})
 		s.Peerch <- Peer{
-			Conn:          conn,
+			Conn: &websocket_peer{
+				Conn: conn,
+			},
 			SectionOffset: make(map[string]int),
 		}
 
@@ -68,13 +58,39 @@ func StartConsumer(s *Server, ro *mux.Router) error {
 	return err
 }
 
+func StartConsumertcp(s *Server) error {
+	ln, err := net.Listen("tcp", s.ConsumerListenAddrTCP)
+	if err != nil {
+
+		log.Fatal(err)
+		return err
+	}
+	defer ln.Close()
+
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			slog.Info("Error", "err:", err)
+			continue
+		}
+		slog.Info("Connection Established with", "addr", conn.RemoteAddr())
+		s.Peerch <- Peer{
+			Conn: &tcp_peer{
+				Conn: conn,
+			},
+			SectionOffset: make(map[string]int),
+		}
+	}
+
+}
+
 func peerlisten(p *Peer, s *Server) {
 	var request Request
 	for {
-		err := p.Conn.ReadJSON(&request)
+		err := p.Conn.Read_data(&request)
 		if err != nil {
-			fmt.Println(request.Sections)
 			slog.Error(err.Error())
+			continue
 		} else {
 			go Process(request, p, s)
 		}
@@ -94,7 +110,7 @@ func Process(r Request, p *Peer, s *Server) {
 func (s *Server) PushtoPeer(p *Peer, r Request) {
 	if len(r.Sections) == 0 {
 		slog.Info("No sections provided")
-		p.Conn.WriteJSON(Message{
+		p.Conn.Write_data(Message{
 			Status:  "Error",
 			Section: "",
 			Data:    []byte("NO section Provided to Pull"),
@@ -102,8 +118,17 @@ func (s *Server) PushtoPeer(p *Peer, r Request) {
 		return
 	}
 	for _, section := range r.Sections {
+		if _, ok := s.Sections[section]; !ok {
+			slog.Info("Section not found", "section", section)
+			p.Conn.Write_data(Message{
+				Status:  "Error",
+				Section: section,
+				Data:    []byte("Section not found or not yet published"),
+			})
+			continue
+		}
 		if _, ok := p.SectionOffset[section]; !ok {
-			p.Conn.WriteJSON(Message{
+			p.Conn.Write_data(Message{
 				Status:  "Error",
 				Section: section,
 				Data:    []byte("Not subscribed to the section"),
@@ -116,14 +141,14 @@ func (s *Server) PushtoPeer(p *Peer, r Request) {
 			data, err := s.Sections[section].Fetch(i)
 			if err != nil {
 				slog.Info(err.Error())
-				p.Conn.WriteJSON(Message{
+				p.Conn.Write_data(Message{
 					Status:  "Error",
 					Section: section,
 					Data:    []byte(err.Error()),
 				})
 				continue
 			}
-			p.Conn.WriteJSON(Message{
+			p.Conn.Write_data(Message{
 				Status:  "Success",
 				Section: section,
 				Data:    data,
@@ -146,7 +171,7 @@ func (s *Server) NewSection(section string) {
 func (s *Server) AddPeertoSection(p *Peer, r Request) {
 	if len(r.Sections) == 0 {
 		slog.Info("No sections provided")
-		p.Conn.WriteJSON(Message{
+		p.Conn.Write_data(Message{
 			Status:  "Error",
 			Section: "",
 			Data:    []byte("NO section Provided to Subscribe"),
@@ -157,7 +182,7 @@ func (s *Server) AddPeertoSection(p *Peer, r Request) {
 	for _, section := range r.Sections {
 		if _, ok := s.Sections[section]; !ok {
 			slog.Info("Section not found", "section", section)
-			p.Conn.WriteJSON(Message{
+			p.Conn.Write_data(Message{
 				Status:  "Error",
 				Section: section,
 				Data:    []byte("Section not found or not yet published"),
@@ -165,7 +190,7 @@ func (s *Server) AddPeertoSection(p *Peer, r Request) {
 		} else {
 			p.SectionOffset[section] = 0
 			slog.Info("Peer added to the section", "section", section)
-			p.Conn.WriteJSON(Message{
+			p.Conn.Write_data(Message{
 				Status:  "Success",
 				Section: section,
 				Data:    []byte("You are subscibed to the section"),

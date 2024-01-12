@@ -2,23 +2,13 @@ package main
 
 import (
 	"github.com/gorilla/mux"
-	"github.com/gorilla/websocket"
 )
 
-type Post struct {
-	Data    []byte
-	section string
-}
-
-type Peer struct {
-	Conn          *websocket.Conn
-	SectionOffset map[string]int //section to offset
-}
-
 type Config struct {
-	ProduceListenAddr  string
-	ConsumerListenAddr string
-	StoreFunc          ProduceFunc
+	ProduceListenAddr     string
+	ConsumerListenAddr    string
+	ConsumerListenAddrTCP string
+	StoreFunc             ProduceFunc
 }
 
 type Server struct {
@@ -57,6 +47,8 @@ func (s *Server) Serve() error {
 
 	consume := mux.NewRouter()
 	go StartConsumer(s, consume)
+
+	go StartConsumertcp(s)
 	s.listen()
 	return nil
 
