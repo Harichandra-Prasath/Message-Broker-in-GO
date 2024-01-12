@@ -39,11 +39,18 @@ curl -X POST http:127.0.0.1:4000/pub/< your section > --data-binary < your data 
 	"Data":    data,
 }
 ```
-- Remember the data you recieved will be in binary   
+   
+
+
+- To consume over tcp, just make a connection to port 5000 by telnet or other for your choice   
+- Make an inline-Json request to the server  
+- You will get a Json type response back   
+- **Follow the same Request Structure as above**
+
+- **Remember the data you recieved will be in binary**  
 
 
 ### Future Scope 
-
-- Porting over tcp or other protocols   
+   
 - Adding Authentication or Middleware for publish and subscribe  
 - Improve overall performance  
