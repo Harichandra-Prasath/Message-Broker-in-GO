@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"log"
 	"log/slog"
@@ -43,7 +44,7 @@ func StartConsumer(s *Server, ro *mux.Router) error {
 		conn.WriteJSON(Message{
 			Status:  "Success",
 			Section: "",
-			Data:    []byte("You are Connected"),
+			Data:    []byte("You are Connected...Subscribe to topics to Pull messages"),
 		})
 		s.Peerch <- Peer{
 			Conn: &websocket_peer{
@@ -89,21 +90,27 @@ func peerlisten(p *Peer, s *Server) {
 	for {
 		err := p.Conn.Read_data(&request)
 		if err != nil {
-			slog.Error(err.Error())
-			continue
+			fmt.Print(err)
+			p.Conn.Close()
+			return
+
 		} else {
 			go Process(request, p, s)
 		}
-
 	}
 }
 
 func Process(r Request, p *Peer, s *Server) {
 	if r.Reason == "Subscribe" {
 		go s.AddPeertoSection(p, r)
-	}
-	if r.Reason == "Pull" {
+	} else if r.Reason == "Pull" {
 		go s.PushtoPeer(p, r)
+	} else {
+		p.Conn.Write_data(Message{
+			Status:  "Error",
+			Section: "",
+			Data:    []byte("Invalid Request"),
+		})
 	}
 }
 

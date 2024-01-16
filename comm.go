@@ -13,6 +13,7 @@ import (
 type peer interface {
 	Read_data(interface{}) error
 	Write_data(interface{}) error
+	Close() error
 }
 
 // Struct extending peer interface with managing peer sections offsets
@@ -34,6 +35,10 @@ func (w *websocket_peer) Write_data(v interface{}) error {
 	return w.Conn.WriteJSON(v)
 }
 
+func (w *websocket_peer) Close() error {
+	return w.Conn.Close()
+}
+
 // definition for a tcp peer
 
 type tcp_peer struct {
@@ -50,7 +55,7 @@ func (t *tcp_peer) Read_data(v interface{}) error {
 	if err != nil {
 		return err
 	}
-	return err
+	return nil
 }
 
 func (t *tcp_peer) Write_data(v interface{}) error {
@@ -65,6 +70,10 @@ func (t *tcp_peer) Write_data(v interface{}) error {
 	}
 	return nil
 
+}
+
+func (t *tcp_peer) Close() error {
+	return t.Conn.Close()
 }
 
 // Publishing Struct
