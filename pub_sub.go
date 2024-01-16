@@ -41,11 +41,6 @@ func StartConsumer(s *Server, ro *mux.Router) error {
 			return
 		}
 		slog.Info("Websocket connection Made")
-		conn.WriteJSON(Message{
-			Status:  "Success",
-			Section: "",
-			Data:    []byte("You are Connected...Subscribe to topics to Pull messages"),
-		})
 		s.Peerch <- Peer{
 			Conn: &websocket_peer{
 				Conn: conn,
@@ -195,6 +190,7 @@ func (s *Server) AddPeertoSection(p *Peer, r Request) {
 				Data:    []byte("Section not found or not yet published"),
 			})
 		} else {
+			s.Subscribers[section] = append(s.Subscribers[section], p)
 			p.SectionOffset[section] = 0
 			slog.Info("Peer added to the section", "section", section)
 			p.Conn.Write_data(Message{

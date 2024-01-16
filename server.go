@@ -13,17 +13,19 @@ type Config struct {
 
 type Server struct {
 	*Config
-	Sections map[string]Storer
-	Postch   chan Post
-	Peerch   chan Peer
+	Sections    map[string]Storer
+	Subscribers map[string][]*Peer
+	Postch      chan Post
+	Peerch      chan Peer
 }
 
 func Newserver(cfg *Config) *Server {
 	return &Server{
-		Config:   cfg,
-		Sections: make(map[string]Storer),
-		Postch:   make(chan Post),
-		Peerch:   make(chan Peer),
+		Config:      cfg,
+		Sections:    make(map[string]Storer),
+		Subscribers: make(map[string][]*Peer),
+		Postch:      make(chan Post),
+		Peerch:      make(chan Peer),
 	}
 }
 
@@ -33,10 +35,25 @@ func (s *Server) listen() {
 		case data := <-s.Postch:
 			s.NewSection(data.section)
 			s.Sections[data.section].Push(data.Data)
+			for _, peer := range s.Subscribers[data.section] {
+				peer.Conn.Write_data(Message{
+					Status:  "Updates",
+					Section: data.section,
+					Data:    []byte("New Post published...Pull to see the latest post"),
+				})
+			}
 		case peer := <-s.Peerch:
-			go peerlisten(&peer, s)
-		}
+			if len(peer.SectionOffset) == 0 {
+				peer.Conn.Write_data(Message{
+					Status:  "Success",
+					Section: "",
+					Data:    []byte("You are Connected...Subscribe to topics to Pull messages"),
+				})
+			} else {
+				go peerlisten(&peer, s)
+			}
 
+		}
 	}
 }
 
