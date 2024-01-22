@@ -14,6 +14,7 @@ type peer interface {
 	Read_data(interface{}) error
 	Write_data(interface{}) error
 	Close() error
+	RemoteAddr() string
 }
 
 // Struct extending peer interface with managing peer sections offsets
@@ -37,6 +38,10 @@ func (w *websocket_peer) Write_data(v interface{}) error {
 
 func (w *websocket_peer) Close() error {
 	return w.Conn.Close()
+}
+
+func (w *websocket_peer) RemoteAddr() string {
+	return w.Conn.RemoteAddr().String()
 }
 
 // definition for a tcp peer
@@ -74,6 +79,10 @@ func (t *tcp_peer) Write_data(v interface{}) error {
 
 func (t *tcp_peer) Close() error {
 	return t.Conn.Close()
+}
+
+func (t *tcp_peer) RemoteAddr() string {
+	return t.Conn.RemoteAddr().String()
 }
 
 // Publishing Struct

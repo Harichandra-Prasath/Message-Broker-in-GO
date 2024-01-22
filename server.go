@@ -1,6 +1,8 @@
 package main
 
 import (
+	"log/slog"
+
 	"github.com/gorilla/mux"
 )
 
@@ -32,13 +34,14 @@ func Newserver(cfg *Config) *Server {
 func (s *Server) listen() {
 	for {
 		select {
-		case data := <-s.Postch:
-			s.NewSection(data.section)
-			s.Sections[data.section].Push(data.Data)
-			for _, peer := range s.Subscribers[data.section] {
+		case post := <-s.Postch:
+			s.NewSection(post.section)
+			s.Sections[post.section].Push(post.Data)
+			slog.Info("Post Published on", "section", post.section, "data", post.Data)
+			for _, peer := range s.Subscribers[post.section] {
 				peer.Conn.Write_data(Message{
 					Status:  "Updates",
-					Section: data.section,
+					Section: post.section,
 					Data:    []byte("New Post published...Pull to see the latest post"),
 				})
 			}
@@ -49,6 +52,7 @@ func (s *Server) listen() {
 					Section: "",
 					Data:    []byte("You are Connected...Subscribe to topics to Pull messages"),
 				})
+				go peerlisten(&peer, s)
 			} else {
 				go peerlisten(&peer, s)
 			}

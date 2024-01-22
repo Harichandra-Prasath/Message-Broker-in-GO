@@ -1,12 +1,12 @@
 package main
 
 import (
-	"fmt"
 	"io"
 	"log"
 	"log/slog"
 	"net"
 	"net/http"
+	"strings"
 
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
@@ -40,7 +40,7 @@ func StartConsumer(s *Server, ro *mux.Router) error {
 			log.Panic(err)
 			return
 		}
-		slog.Info("Websocket connection Made")
+		slog.Info("Websocket Connection Established with", "addr", conn.RemoteAddr())
 		s.Peerch <- Peer{
 			Conn: &websocket_peer{
 				Conn: conn,
@@ -57,7 +57,6 @@ func StartConsumer(s *Server, ro *mux.Router) error {
 func StartConsumertcp(s *Server) error {
 	ln, err := net.Listen("tcp", s.ConsumerListenAddrTCP)
 	if err != nil {
-
 		log.Fatal(err)
 		return err
 	}
@@ -69,7 +68,7 @@ func StartConsumertcp(s *Server) error {
 			slog.Info("Error", "err:", err)
 			continue
 		}
-		slog.Info("Connection Established with", "addr", conn.RemoteAddr())
+		slog.Info("TCP Connection Established with", "addr", conn.RemoteAddr())
 		s.Peerch <- Peer{
 			Conn: &tcp_peer{
 				Conn: conn,
@@ -85,9 +84,17 @@ func peerlisten(p *Peer, s *Server) {
 	for {
 		err := p.Conn.Read_data(&request)
 		if err != nil {
-			fmt.Print(err)
-			p.Conn.Close()
-			return
+			if err.Error() == "EOF" || strings.HasPrefix(err.Error(), "websocket") {
+				slog.Info("Connection closed by peer", "addr", p.Conn.RemoteAddr())
+				p.Conn.Close()
+				return
+			}
+			slog.Info("Invalid request form")
+			p.Conn.Write_data(Message{
+				Status:  "Error",
+				Section: "",
+				Data:    []byte("Invalid request"),
+			})
 
 		} else {
 			go Process(request, p, s)
@@ -166,7 +173,7 @@ func (s *Server) PushtoPeer(p *Peer, r Request) {
 func (s *Server) NewSection(section string) {
 	if _, ok := s.Sections[section]; !ok {
 		s.Sections[section] = s.Config.StoreFunc()
-		slog.Info("New Section in memory created")
+		slog.Info("New Section in memory created", "section", section)
 	}
 }
 
