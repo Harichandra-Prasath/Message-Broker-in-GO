@@ -1,9 +1,13 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
-
-	"github.com/gorilla/websocket"
+	"net"
+	"net/http"
+	"os"
+	"time"
 )
 
 type Request struct {
@@ -18,30 +22,42 @@ type Message struct {
 }
 
 func main() {
-	request1 := Request{
-		Reason:   "Subscribe",
-		Sections: []string{"foo", "bar"},
-	}
-	request2 := Request{
-		Reason:   "Pull",
-		Sections: []string{"foo", "bar"},
-	}
-	conn1, _, _ := websocket.DefaultDialer.Dial("ws://127.0.0.1:4000/sub/", nil)
-
-	err := conn1.WriteJSON(request1)
+	tcpserver, _ := net.ResolveTCPAddr("tcp", "localhost:5000")
+	_, err := http.Post("http://127.0.0.1:3000/pub/foo", "application/octet-stream", bytes.NewReader([]byte("foo")))
 	if err != nil {
-		fmt.Print(err)
+		fmt.Println(err)
 	}
-	conn1.WriteJSON(request2)
+	for i := 0; i < 1000; i++ {
+		go func() {
+			conn, err := net.DialTCP("tcp", nil, tcpserver)
+			if err != nil {
+				fmt.Print(err)
+			}
+			data, _ := json.Marshal(Request{
+				Reason:   "Subscribe",
+				Sections: []string{"foo"},
+			})
+			_, err = conn.Write(data)
+			if err != nil {
+				fmt.Print("Error")
+			}
+			if err != nil {
+				println("Write data failed:", err.Error())
+				os.Exit(1)
+			}
+			for {
+				recieved := make([]byte, 1024)
+				_, err = conn.Read(recieved)
+				if err != nil {
+					fmt.Println("failed")
+				}
+				fmt.Println("Recieved Message")
+			}
+
+		}()
+		time.Sleep(500 * time.Millisecond)
+	}
 	for {
-
-		var message Message
-		err := conn1.ReadJSON(&message)
-		if err != nil {
-			fmt.Print(err)
-		}
-		fmt.Printf("Data: %s recieved from server on Section: %s\n", string(message.Data), message.Section)
-
+		continue
 	}
-
 }
