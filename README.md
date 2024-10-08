@@ -31,7 +31,7 @@ curl -X POST http:127.0.0.1:4000/pub/< your section > --data-binary < your data 
     "Sections": ["foo","bar"]
 }
 ```
-- You will recieve the published binary data in this form  
+- You will recieve the published  data in this form  
 ```bash
 {
     "Status":  "Success",
@@ -46,9 +46,6 @@ curl -X POST http:127.0.0.1:4000/pub/< your section > --data-binary < your data 
 - Make an inline-Json request to the server  
 - You will get a Json type response back   
 - **Follow the same Request Structure as above**
-
-- **Remember the data you recieved will be in binary**  
-
 
 ### Future Scope 
    
