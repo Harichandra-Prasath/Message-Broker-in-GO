@@ -6,7 +6,7 @@ Message broker built in go using gorilla mux and websockets. Followed Publish/Su
 - Install the necessary packages using go.mod  
 - Run the server  
 ```bash
-make
+make run
 ```
 
 ### Usage
